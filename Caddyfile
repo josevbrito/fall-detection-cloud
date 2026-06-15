@@ -1,15 +1,36 @@
 # Caddyfile
 # ---------
-# O Caddy lê o domínio da variável de ambiente TB_DOMAIN (definida no .env).
-# Ao subir, ele:
-#   1. Obtém um certificado TLS gratuito do Let's Encrypt para esse domínio
-#      (requer que o A record já aponte para o IP da VM e portas 80/443 abertas).
-#   2. Renova o certificado automaticamente.
-#   3. Faz proxy reverso de todo o tráfego HTTPS para o ThingsBoard (porta 9090
-#      interna, acessível só pela rede Docker — não exposta na internet).
+# Reverse proxy + HTTPS automático (Let's Encrypt) para os 3 subdomínios.
+# Cada bloco abaixo: Caddy obtém/renova o certificado TLS sozinho e faz proxy
+# do tráfego HTTPS (443) para a porta interna do serviço.
 #
-# Resultado: https://iot.josevbrito.com  →  dashboard e REST API do ThingsBoard.
+# Pré-requisitos:
+#   - Os A records de cada subdomínio já apontam para o IP público da EC2.
+#   - Portas 80 e 443 abertas no Security Group da AWS.
+#
+# Mapa:
+#   https://fall-detection.iot.josevbrito.com  →  ThingsBoard (dashboard + REST)
+#   https://dashboard.iot.josevbrito.com       →  Dashboard Next (porta 3001)
+#   https://grafana.iot.josevbrito.com         →  Grafana (porta 3000)
 
-{$TB_DOMAIN} {
+{
+	# E-mail para o Let's Encrypt (avisos de expiração / recuperação).
+	email josevictorbritoc@gmail.com
+}
+
+# ThingsBoard — porta 9090 interna (não exposta na internet, só via Caddy).
+fall-detection.iot.josevbrito.com {
 	reverse_proxy thingsboard:9090
+}
+
+# Dashboard Next — roda no HOST da EC2 (npm run start -p 3001).
+# host.docker.internal resolve o host a partir do container (precisa do
+# extra_hosts no serviço caddy — ver docker-compose.public.yml).
+dashboard.iot.josevbrito.com {
+	reverse_proxy host.docker.internal:3001
+}
+
+# Grafana — serviço no mesmo network Docker (suba com --profile monitoring).
+grafana.iot.josevbrito.com {
+	reverse_proxy grafana:3000
 }

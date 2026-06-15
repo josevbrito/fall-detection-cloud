@@ -49,6 +49,10 @@ services:
       - caddy-config:/config
     depends_on:
       - thingsboard
+    # Permite ao Caddy alcançar serviços rodando no HOST (ex: o dashboard Next
+    # em host:3001) via host.docker.internal.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - iot-cloud
 
@@ -61,6 +65,9 @@ services:
       # MQTT exposto direto na internet. A porta 9090 (HTTP) NÃO é publicada:
       # o acesso ao dashboard/API passa pelo Caddy (HTTPS na 443).
       - "1883:1883"   # MQTT broker (público)
+      # HTTP do TB publicado SÓ no localhost da EC2 (não na internet) para o
+      # dashboard Next (rodando no host) ler via TB_URL=http://localhost:8090.
+      - "127.0.0.1:8090:9090"
       # Para MQTT sobre TLS (8883), veja a seção comentada no README.
     environment:
       TB_QUEUE_TYPE: in-memory
@@ -127,6 +134,10 @@ services:
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
       GF_USERS_ALLOW_SIGN_UP: "false"
+      # Atrás do Caddy em subdomínio próprio: sem isto, redirects e assets do
+      # Grafana quebram (ele assume localhost:3000).
+      GF_SERVER_ROOT_URL: https://grafana.iot.josevbrito.com
+      GF_SERVER_DOMAIN: grafana.iot.josevbrito.com
     volumes:
       - grafana-data:/var/lib/grafana
     depends_on:
