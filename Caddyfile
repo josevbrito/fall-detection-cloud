@@ -1,0 +1,15 @@
+# Caddyfile
+# ---------
+# O Caddy lê o domínio da variável de ambiente TB_DOMAIN (definida no .env).
+# Ao subir, ele:
+#   1. Obtém um certificado TLS gratuito do Let's Encrypt para esse domínio
+#      (requer que o A record já aponte para o IP da VM e portas 80/443 abertas).
+#   2. Renova o certificado automaticamente.
+#   3. Faz proxy reverso de todo o tráfego HTTPS para o ThingsBoard (porta 9090
+#      interna, acessível só pela rede Docker — não exposta na internet).
+#
+# Resultado: https://iot.josevbrito.com  →  dashboard e REST API do ThingsBoard.
+
+{$TB_DOMAIN} {
+	reverse_proxy thingsboard:9090
+}

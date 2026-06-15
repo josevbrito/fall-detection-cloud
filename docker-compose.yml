@@ -1,0 +1,112 @@
+# docker-compose.yml — SERVIDOR (modo LAN / self-hosted)
+# -------------------------------------------------------
+# Sobe o middleware numa máquina (a "Máquina A") e expõe as portas na rede
+# local para que a máquina cliente (load test) publique telemetria via MQTT.
+#
+#   ThingsBoard  :8090 (HTTP/dashboard/REST)  |  :1883 (MQTT)
+#   Postgres     persistência
+#   Grafana/Prometheus  monitoramento (perfil opcional)
+#
+# Uso:
+#   docker compose up -d                       # ThingsBoard + Postgres
+#   docker compose --profile monitoring up -d  # + Grafana/Prometheus
+#
+# Para expor na nuvem pública com domínio + TLS (Caddy), use o arquivo
+# docker-compose.public.yml (veja o README).
+
+networks:
+  iot-cloud:
+    driver: bridge
+
+services:
+
+  thingsboard:
+    image: thingsboard/tb-postgres
+    container_name: thingsboard
+    restart: unless-stopped
+    ports:
+      - "8090:9090"   # HTTP dashboard/REST — acessível na LAN: http://IP_DO_SERVIDOR:8090
+      - "1883:1883"   # MQTT broker        — acessível na LAN: IP_DO_SERVIDOR:1883
+    environment:
+      TB_QUEUE_TYPE: in-memory
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/thingsboard
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - tb-data:/data
+      - tb-logs:/var/log/thingsboard
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - iot-cloud
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 3 bash -c 'cat < /dev/null > /dev/tcp/localhost/9090' && echo ok"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 90s
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: tb-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: thingsboard
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    networks:
+      - iot-cloud
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d thingsboard"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ---------- Monitoramento (perfil opcional: --profile monitoring) -------
+  prometheus:
+    image: prom/prometheus:v2.52.0
+    container_name: prometheus
+    restart: unless-stopped
+    profiles: [monitoring]
+    ports:
+      - "9091:9090"   # UI do Prometheus (9091 no host p/ não colidir com TB MQTT/HTTP)
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=7d"
+    networks:
+      - iot-cloud
+
+  grafana:
+    image: grafana/grafana:11.0.0
+    container_name: grafana
+    restart: unless-stopped
+    profiles: [monitoring]
+    ports:
+      - "3000:3000"   # http://IP_DO_SERVIDOR:3000  (admin / ${GRAFANA_ADMIN_PASSWORD})
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/load_test.json
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+    networks:
+      - iot-cloud
+
+volumes:
+  tb-data:
+  tb-logs:
+  pg-data:
+  prometheus-data:
+  grafana-data:

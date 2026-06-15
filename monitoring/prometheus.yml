@@ -1,0 +1,25 @@
+# monitoring/prometheus.yml (SERVIDOR)
+# ------------------------------------
+# O Prometheus roda na Máquina A (servidor) e raspa as métricas que o load test
+# expõe na Máquina B (cliente), na porta 8001 (/metrics).
+#
+# Edite o target "load-test-client" abaixo com o IP da Máquina B na LAN.
+
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  - job_name: "load-test-client"
+    # Troque pelo IP da máquina cliente (Máquina B) na rede local.
+    # O load_test.py expõe /metrics na porta 8001 (METRICS_PORT).
+    static_configs:
+      - targets:
+          - "192.168.0.43:8001"   # <-- IP da Máquina B (cliente)
+    relabel_configs:
+      - target_label: node
+        replacement: "client"

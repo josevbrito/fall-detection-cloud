@@ -1,0 +1,144 @@
+# docker-compose.cloud.yml
+# -------------------------
+# Middleware da simulação distribuída de IoT — versão NUVEM.
+#
+# Diferença para o docker-compose.yml original (que rodava tudo na máquina
+# local, inclusive os sensores): aqui rodam APENAS os serviços de servidor,
+# numa VM pública (ex: droplet DigitalOcean). Os nós sensores ficam fora —
+# rodam na máquina dos alunos e publicam pela internet em iot.josevbrito.com.
+#
+#   ┌──────────────── VM na nuvem (IP público + iot.josevbrito.com) ─────────┐
+#   │  caddy        → TLS automático (Let's Encrypt) + reverse proxy HTTPS   │
+#   │  thingsboard  → broker MQTT (:1883) + API/dashboard (atrás do Caddy)   │
+#   │  postgres     → persistência do ThingsBoard                            │
+#   │  grafana/prom → monitoramento (perfil opcional)                        │
+#   └────────────────────────────────────────────────────────────────────────┘
+#                              ▲ MQTT :1883  |  HTTPS :443
+#                              │  internet pública
+#                    sensor-node-* (máquina dos alunos — outro repositório)
+#
+# Uso:
+#   # núcleo (o que o professor pediu — middleware na nuvem):
+#   docker compose -f docker-compose.cloud.yml up -d
+#
+#   # com monitoramento (Grafana + Prometheus):
+#   docker compose -f docker-compose.cloud.yml --profile monitoring up -d
+
+networks:
+  iot-cloud:
+    driver: bridge
+
+services:
+
+  # ---------- Reverse proxy + TLS automático ------------------------------
+  # O Caddy obtém e renova certificado Let's Encrypt sozinho para o domínio
+  # em TB_DOMAIN e faz proxy do dashboard/API do ThingsBoard sobre HTTPS.
+  # É o que entrega "https://iot.josevbrito.com" e o cadeado de TLS.
+  caddy:
+    image: caddy:2-alpine
+    container_name: caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"     # HTTP — Caddy redireciona para HTTPS e valida o certificado
+      - "443:443"   # HTTPS — dashboard + REST API do ThingsBoard
+    environment:
+      TB_DOMAIN: ${TB_DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data       # certificados (persistem entre restarts)
+      - caddy-config:/config
+    depends_on:
+      - thingsboard
+    networks:
+      - iot-cloud
+
+  # ---------- Middleware central ------------------------------------------
+  thingsboard:
+    image: thingsboard/tb-postgres
+    container_name: thingsboard
+    restart: unless-stopped
+    ports:
+      # MQTT exposto direto na internet. A porta 9090 (HTTP) NÃO é publicada:
+      # o acesso ao dashboard/API passa pelo Caddy (HTTPS na 443).
+      - "1883:1883"   # MQTT broker (público)
+      # Para MQTT sobre TLS (8883), veja a seção comentada no README.
+    environment:
+      TB_QUEUE_TYPE: in-memory
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/thingsboard
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - tb-data:/data
+      - tb-logs:/var/log/thingsboard
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - iot-cloud
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 3 bash -c 'cat < /dev/null > /dev/tcp/localhost/9090' && echo ok"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 90s
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: tb-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: thingsboard
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    networks:
+      - iot-cloud
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d thingsboard"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ---------- Monitoramento (perfil opcional: --profile monitoring) -------
+  prometheus:
+    image: prom/prometheus:v2.52.0
+    container_name: prometheus
+    restart: unless-stopped
+    profiles: [monitoring]
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=7d"
+    networks:
+      - iot-cloud
+
+  grafana:
+    image: grafana/grafana:11.0.0
+    container_name: grafana
+    restart: unless-stopped
+    profiles: [monitoring]
+    ports:
+      - "3000:3000"   # Grafana direto (http://IP:3000). Proteja via firewall.
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    networks:
+      - iot-cloud
+
+volumes:
+  caddy-data:
+  caddy-config:
+  tb-data:
+  tb-logs:
+  pg-data:
+  prometheus-data:
+  grafana-data:
