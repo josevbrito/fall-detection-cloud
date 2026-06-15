@@ -109,11 +109,23 @@ services:
       start_period: 20s
 
   # ---------- Monitoramento (perfil opcional: --profile monitoring) -------
+  # Pushgateway: recebe o PUSH de métricas dos clientes (load test) que estão
+  # em IPs dinâmicos atrás de NAT. O Prometheus raspa ele localmente.
+  pushgateway:
+    image: prom/pushgateway:v1.9.0
+    container_name: pushgateway
+    restart: unless-stopped
+    profiles: [monitoring]
+    networks:
+      - iot-cloud
+
   prometheus:
     image: prom/prometheus:v2.52.0
     container_name: prometheus
     restart: unless-stopped
     profiles: [monitoring]
+    depends_on:
+      - pushgateway
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus

@@ -34,3 +34,9 @@ dashboard.iot.josevbrito.com {
 grafana.iot.josevbrito.com {
 	reverse_proxy grafana:3000
 }
+
+# Pushgateway — recebe o PUSH de métricas dos clientes (load test) sobre HTTPS.
+# O cliente usa PUSHGATEWAY_URL=https://push.iot.josevbrito.com
+push.iot.josevbrito.com {
+	reverse_proxy pushgateway:9091
+}

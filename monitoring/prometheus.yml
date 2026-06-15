@@ -1,9 +1,11 @@
 # monitoring/prometheus.yml (SERVIDOR)
 # ------------------------------------
-# O Prometheus roda na Máquina A (servidor) e raspa as métricas que o load test
-# expõe na Máquina B (cliente), na porta 8001 (/metrics).
+# Na nuvem o cliente tem IP dinâmico atrás de NAT, então o Prometheus NÃO
+# consegue raspá-lo direto (pull). A solução é o Pushgateway: o load test
+# EMPURRA suas métricas para o Pushgateway (endereço fixo na rede Docker) e o
+# Prometheus raspa o Pushgateway aqui mesmo, localmente.
 #
-# Edite o target "load-test-client" abaixo com o IP da Máquina B na LAN.
+#   load test (cliente, IP qualquer) --push--> pushgateway <--pull-- prometheus
 
 global:
   scrape_interval: 5s
@@ -14,12 +16,9 @@ scrape_configs:
     static_configs:
       - targets: ["localhost:9090"]
 
-  - job_name: "load-test-client"
-    # Troque pelo IP da máquina cliente (Máquina B) na rede local.
-    # O load_test.py expõe /metrics na porta 8001 (METRICS_PORT).
+  - job_name: "pushgateway"
+    # honor_labels: true preserva o label "node" enviado por cada cliente,
+    # em vez de o Prometheus sobrescrever com o nome do alvo.
+    honor_labels: true
     static_configs:
-      - targets:
-          - "192.168.0.43:8001"   # <-- IP da Máquina B (cliente)
-    relabel_configs:
-      - target_label: node
-        replacement: "client"
+      - targets: ["pushgateway:9091"]
