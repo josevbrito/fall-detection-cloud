@@ -1,17 +1,23 @@
 # Caddyfile
 # ---------
-# Reverse proxy + HTTPS automático (Let's Encrypt) para os 3 subdomínios.
-# Cada bloco abaixo: Caddy obtém/renova o certificado TLS sozinho e faz proxy
-# do tráfego HTTPS (443) para a porta interna do serviço.
+# Reverse proxy + HTTPS automático (Let's Encrypt) para os subdomínios.
+# Cada bloco: Caddy obtém/renova o certificado TLS sozinho e faz proxy do
+# tráfego HTTPS (443) para a porta interna do serviço.
+#
+# O domínio-base vem da variável IOT_DOMAIN (definida no .env de CADA instância):
+#   - Instância 1 (principal):  IOT_DOMAIN=iot.josevbrito.com
+#   - Instância 2 (backup):     IOT_DOMAIN=1.iot.josevbrito.com
+# Assim o MESMO Caddyfile serve as duas; muda só o .env.
 #
 # Pré-requisitos:
-#   - Os A records de cada subdomínio já apontam para o IP público da EC2.
-#   - Portas 80 e 443 abertas no Security Group da AWS.
+#   - Os wildcards (*.iot e *.1.iot) já apontam para o IP de cada EC2.
+#   - Portas 80 e 443 abertas no Security Group de cada instância.
 #
-# Mapa:
-#   https://fall-detection.iot.josevbrito.com  →  ThingsBoard (dashboard + REST)
-#   https://dashboard.iot.josevbrito.com       →  Dashboard Next (porta 3001)
-#   https://grafana.iot.josevbrito.com         →  Grafana (porta 3000)
+# Mapa (substituindo IOT_DOMAIN):
+#   https://fall-detection.<IOT_DOMAIN>  →  ThingsBoard (dashboard + REST)
+#   https://dashboard.<IOT_DOMAIN>       →  Dashboard Next (porta 3001 no host)
+#   https://grafana.<IOT_DOMAIN>         →  Grafana (porta 3000)
+#   https://push.<IOT_DOMAIN>            →  Pushgateway (porta 9091)
 
 {
 	# E-mail para o Let's Encrypt (avisos de expiração / recuperação).
@@ -19,24 +25,24 @@
 }
 
 # ThingsBoard — porta 9090 interna (não exposta na internet, só via Caddy).
-fall-detection.iot.josevbrito.com {
+fall-detection.{$IOT_DOMAIN} {
 	reverse_proxy thingsboard:9090
 }
 
 # Dashboard Next — roda no HOST da EC2 (npm run start -p 3001).
 # host.docker.internal resolve o host a partir do container (precisa do
 # extra_hosts no serviço caddy — ver docker-compose.public.yml).
-dashboard.iot.josevbrito.com {
+dashboard.{$IOT_DOMAIN} {
 	reverse_proxy host.docker.internal:3001
 }
 
 # Grafana — serviço no mesmo network Docker (suba com --profile monitoring).
-grafana.iot.josevbrito.com {
+grafana.{$IOT_DOMAIN} {
 	reverse_proxy grafana:3000
 }
 
 # Pushgateway — recebe o PUSH de métricas dos clientes (load test) sobre HTTPS.
-# O cliente usa PUSHGATEWAY_URL=https://push.iot.josevbrito.com
-push.iot.josevbrito.com {
+# O cliente usa PUSHGATEWAY_URL=https://push.<IOT_DOMAIN>
+push.{$IOT_DOMAIN} {
 	reverse_proxy pushgateway:9091
 }

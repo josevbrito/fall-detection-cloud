@@ -42,7 +42,8 @@ services:
       - "80:80"     # HTTP — Caddy redireciona para HTTPS e valida o certificado
       - "443:443"   # HTTPS — dashboard + REST API do ThingsBoard
     environment:
-      TB_DOMAIN: ${TB_DOMAIN}
+      # Domínio-base da instância (ex: iot.josevbrito.com ou 1.iot.josevbrito.com).
+      IOT_DOMAIN: ${IOT_DOMAIN}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data       # certificados (persistem entre restarts)
@@ -147,9 +148,9 @@ services:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
       GF_USERS_ALLOW_SIGN_UP: "false"
       # Atrás do Caddy em subdomínio próprio: sem isto, redirects e assets do
-      # Grafana quebram (ele assume localhost:3000).
-      GF_SERVER_ROOT_URL: https://grafana.iot.josevbrito.com
-      GF_SERVER_DOMAIN: grafana.iot.josevbrito.com
+      # Grafana quebram (ele assume localhost:3000). Usa o domínio da instância.
+      GF_SERVER_ROOT_URL: https://grafana.${IOT_DOMAIN}
+      GF_SERVER_DOMAIN: grafana.${IOT_DOMAIN}
     volumes:
       - grafana-data:/var/lib/grafana
     depends_on:
